@@ -94,12 +94,31 @@ export async function getConnection() {
             designPrice DECIMAL(10, 2) NOT NULL DEFAULT 200.00,
             embroiderySurcharge DECIMAL(10, 2) NOT NULL DEFAULT 350.00,
             puffSurcharge DECIMAL(10, 2) NOT NULL DEFAULT 250.00,
+            heavyCottonPrice DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+            oversizedBoxyPrice DECIMAL(10, 2) NOT NULL DEFAULT 400.00,
+            supimaLuxuryPrice DECIMAL(10, 2) NOT NULL DEFAULT 800.00,
             createdAt DATETIME NOT NULL DEFAULT GETDATE(),
             updatedAt DATETIME NOT NULL DEFAULT GETDATE()
           );
 
-          INSERT INTO CustomizerSettings (id, basePrice, textPrice, imagePrice, graphicPrice, designPrice, embroiderySurcharge, puffSurcharge)
-          VALUES ('settings-1', 1499.00, 200.00, 500.00, 150.00, 200.00, 350.00, 250.00);
+          INSERT INTO CustomizerSettings (id, basePrice, textPrice, imagePrice, graphicPrice, designPrice, embroiderySurcharge, puffSurcharge, heavyCottonPrice, oversizedBoxyPrice, supimaLuxuryPrice)
+          VALUES ('settings-1', 1499.00, 200.00, 500.00, 150.00, 200.00, 350.00, 250.00, 0.00, 400.00, 800.00);
+        END
+
+        IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'CustomizerSettings')
+        BEGIN
+          IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'heavyCottonPrice')
+          BEGIN
+            ALTER TABLE CustomizerSettings ADD heavyCottonPrice DECIMAL(10, 2) NOT NULL DEFAULT 0.00;
+          END
+          IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'oversizedBoxyPrice')
+          BEGIN
+            ALTER TABLE CustomizerSettings ADD oversizedBoxyPrice DECIMAL(10, 2) NOT NULL DEFAULT 400.00;
+          END
+          IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'supimaLuxuryPrice')
+          BEGIN
+            ALTER TABLE CustomizerSettings ADD supimaLuxuryPrice DECIMAL(10, 2) NOT NULL DEFAULT 800.00;
+          END
         END
       `);
     } catch (migErr) {

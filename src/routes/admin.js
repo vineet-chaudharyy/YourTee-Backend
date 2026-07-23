@@ -348,6 +348,9 @@ router.get("/customizer-settings", async (req, res) => {
           designPrice: 200,
           embroiderySurcharge: 350,
           puffSurcharge: 250,
+          heavyCottonPrice: 0,
+          oversizedBoxyPrice: 400,
+          supimaLuxuryPrice: 800,
         }
       });
     }
@@ -362,6 +365,9 @@ router.get("/customizer-settings", async (req, res) => {
         designPrice: Number(s.designPrice),
         embroiderySurcharge: Number(s.embroiderySurcharge),
         puffSurcharge: Number(s.puffSurcharge),
+        heavyCottonPrice: s.heavyCottonPrice !== undefined && s.heavyCottonPrice !== null ? Number(s.heavyCottonPrice) : 0,
+        oversizedBoxyPrice: s.oversizedBoxyPrice !== undefined && s.oversizedBoxyPrice !== null ? Number(s.oversizedBoxyPrice) : 400,
+        supimaLuxuryPrice: s.supimaLuxuryPrice !== undefined && s.supimaLuxuryPrice !== null ? Number(s.supimaLuxuryPrice) : 800,
       }
     });
   } catch (err) {
@@ -380,6 +386,9 @@ router.put("/customizer-settings", requireAdmin, async (req, res) => {
     designPrice,
     embroiderySurcharge,
     puffSurcharge,
+    heavyCottonPrice,
+    oversizedBoxyPrice,
+    supimaLuxuryPrice,
   } = req.body;
 
   if (
@@ -389,7 +398,10 @@ router.put("/customizer-settings", requireAdmin, async (req, res) => {
     graphicPrice === undefined ||
     designPrice === undefined ||
     embroiderySurcharge === undefined ||
-    puffSurcharge === undefined
+    puffSurcharge === undefined ||
+    heavyCottonPrice === undefined ||
+    oversizedBoxyPrice === undefined ||
+    supimaLuxuryPrice === undefined
   ) {
     return res.status(400).json({ error: "All pricing fields are required." });
   }
@@ -407,9 +419,12 @@ router.put("/customizer-settings", requireAdmin, async (req, res) => {
         .input("designPrice", sql.Decimal(10, 2), Number(designPrice))
         .input("embroiderySurcharge", sql.Decimal(10, 2), Number(embroiderySurcharge))
         .input("puffSurcharge", sql.Decimal(10, 2), Number(puffSurcharge))
+        .input("heavyCottonPrice", sql.Decimal(10, 2), Number(heavyCottonPrice))
+        .input("oversizedBoxyPrice", sql.Decimal(10, 2), Number(oversizedBoxyPrice))
+        .input("supimaLuxuryPrice", sql.Decimal(10, 2), Number(supimaLuxuryPrice))
         .query(`
-          INSERT INTO CustomizerSettings (id, basePrice, textPrice, imagePrice, graphicPrice, designPrice, embroiderySurcharge, puffSurcharge)
-          VALUES (@id, @basePrice, @textPrice, @imagePrice, @graphicPrice, @designPrice, @embroiderySurcharge, @puffSurcharge)
+          INSERT INTO CustomizerSettings (id, basePrice, textPrice, imagePrice, graphicPrice, designPrice, embroiderySurcharge, puffSurcharge, heavyCottonPrice, oversizedBoxyPrice, supimaLuxuryPrice)
+          VALUES (@id, @basePrice, @textPrice, @imagePrice, @graphicPrice, @designPrice, @embroiderySurcharge, @puffSurcharge, @heavyCottonPrice, @oversizedBoxyPrice, @supimaLuxuryPrice)
         `);
     } else {
       const settingsId = check.recordset[0].id;
@@ -422,12 +437,16 @@ router.put("/customizer-settings", requireAdmin, async (req, res) => {
         .input("designPrice", sql.Decimal(10, 2), Number(designPrice))
         .input("embroiderySurcharge", sql.Decimal(10, 2), Number(embroiderySurcharge))
         .input("puffSurcharge", sql.Decimal(10, 2), Number(puffSurcharge))
+        .input("heavyCottonPrice", sql.Decimal(10, 2), Number(heavyCottonPrice))
+        .input("oversizedBoxyPrice", sql.Decimal(10, 2), Number(oversizedBoxyPrice))
+        .input("supimaLuxuryPrice", sql.Decimal(10, 2), Number(supimaLuxuryPrice))
         .query(`
           UPDATE CustomizerSettings
           SET basePrice = @basePrice, textPrice = @textPrice, imagePrice = @imagePrice,
               graphicPrice = @graphicPrice, designPrice = @designPrice,
               embroiderySurcharge = @embroiderySurcharge, puffSurcharge = @puffSurcharge,
-              updatedAt = GETDATE()
+              heavyCottonPrice = @heavyCottonPrice, oversizedBoxyPrice = @oversizedBoxyPrice,
+              supimaLuxuryPrice = @supimaLuxuryPrice, updatedAt = GETDATE()
           WHERE id = @id
         `);
     }
