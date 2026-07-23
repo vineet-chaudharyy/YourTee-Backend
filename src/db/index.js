@@ -82,6 +82,25 @@ export async function getConnection() {
             ('s2', 'Atelier Series', 'THE ATELIER SILHOUETTE', 'Vintage taupe heavyweight cotton tailored with tonal contrast stitching and centered yourTee brand typography.', '/hero_taupe_studio.png', '/shop', 'rgba(212, 175, 55, 0.15)', 'ATELIER 05', '[51.50° N, 0.12° W]', 1),
             ('s3', 'Exclusive Drop', 'THE ARCHITECT SERIES', 'Geometric line art printed in fine gold ink on heavyweight cotton, designed to structural proportions.', '/hero_architect_back.jpg', '/shop', 'rgba(212, 175, 55, 0.12)', 'SERIES 03', '[35.67° N, 139.65° E]', 2);
         END
+
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'CustomizerSettings')
+        BEGIN
+          CREATE TABLE CustomizerSettings (
+            id VARCHAR(36) PRIMARY KEY,
+            basePrice DECIMAL(10, 2) NOT NULL DEFAULT 1499.00,
+            textPrice DECIMAL(10, 2) NOT NULL DEFAULT 200.00,
+            imagePrice DECIMAL(10, 2) NOT NULL DEFAULT 500.00,
+            graphicPrice DECIMAL(10, 2) NOT NULL DEFAULT 150.00,
+            designPrice DECIMAL(10, 2) NOT NULL DEFAULT 200.00,
+            embroiderySurcharge DECIMAL(10, 2) NOT NULL DEFAULT 350.00,
+            puffSurcharge DECIMAL(10, 2) NOT NULL DEFAULT 250.00,
+            createdAt DATETIME NOT NULL DEFAULT GETDATE(),
+            updatedAt DATETIME NOT NULL DEFAULT GETDATE()
+          );
+
+          INSERT INTO CustomizerSettings (id, basePrice, textPrice, imagePrice, graphicPrice, designPrice, embroiderySurcharge, puffSurcharge)
+          VALUES ('settings-1', 1499.00, 200.00, 500.00, 150.00, 200.00, 350.00, 250.00);
+        END
       `);
     } catch (migErr) {
       console.warn("Auto-migration warning:", migErr.message);

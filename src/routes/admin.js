@@ -331,4 +331,112 @@ router.delete("/collections/:name", requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/customizer-settings - Get customizer pricing settings
+router.get("/customizer-settings", async (req, res) => {
+  try {
+    const pool = await getConnection();
+    const result = await pool.request()
+      .query("SELECT TOP 1 * FROM CustomizerSettings ORDER BY createdAt DESC");
+    
+    if (result.recordset.length === 0) {
+      return res.json({
+        settings: {
+          basePrice: 1499,
+          textPrice: 200,
+          imagePrice: 500,
+          graphicPrice: 150,
+          designPrice: 200,
+          embroiderySurcharge: 350,
+          puffSurcharge: 250,
+        }
+      });
+    }
+
+    const s = result.recordset[0];
+    return res.json({
+      settings: {
+        basePrice: Number(s.basePrice),
+        textPrice: Number(s.textPrice),
+        imagePrice: Number(s.imagePrice),
+        graphicPrice: Number(s.graphicPrice),
+        designPrice: Number(s.designPrice),
+        embroiderySurcharge: Number(s.embroiderySurcharge),
+        puffSurcharge: Number(s.puffSurcharge),
+      }
+    });
+  } catch (err) {
+    console.error("Get Customizer Settings Error:", err.message);
+    return res.status(500).json({ error: "Server error fetching customizer settings." });
+  }
+});
+
+// PUT /api/admin/customizer-settings - Update customizer pricing settings (Admin only)
+router.put("/customizer-settings", requireAdmin, async (req, res) => {
+  const {
+    basePrice,
+    textPrice,
+    imagePrice,
+    graphicPrice,
+    designPrice,
+    embroiderySurcharge,
+    puffSurcharge,
+  } = req.body;
+
+  if (
+    basePrice === undefined ||
+    textPrice === undefined ||
+    imagePrice === undefined ||
+    graphicPrice === undefined ||
+    designPrice === undefined ||
+    embroiderySurcharge === undefined ||
+    puffSurcharge === undefined
+  ) {
+    return res.status(400).json({ error: "All pricing fields are required." });
+  }
+
+  try {
+    const pool = await getConnection();
+    const check = await pool.request().query("SELECT TOP 1 id FROM CustomizerSettings");
+    if (check.recordset.length === 0) {
+      await pool.request()
+        .input("id", sql.VarChar(36), "settings-1")
+        .input("basePrice", sql.Decimal(10, 2), Number(basePrice))
+        .input("textPrice", sql.Decimal(10, 2), Number(textPrice))
+        .input("imagePrice", sql.Decimal(10, 2), Number(imagePrice))
+        .input("graphicPrice", sql.Decimal(10, 2), Number(graphicPrice))
+        .input("designPrice", sql.Decimal(10, 2), Number(designPrice))
+        .input("embroiderySurcharge", sql.Decimal(10, 2), Number(embroiderySurcharge))
+        .input("puffSurcharge", sql.Decimal(10, 2), Number(puffSurcharge))
+        .query(`
+          INSERT INTO CustomizerSettings (id, basePrice, textPrice, imagePrice, graphicPrice, designPrice, embroiderySurcharge, puffSurcharge)
+          VALUES (@id, @basePrice, @textPrice, @imagePrice, @graphicPrice, @designPrice, @embroiderySurcharge, @puffSurcharge)
+        `);
+    } else {
+      const settingsId = check.recordset[0].id;
+      await pool.request()
+        .input("id", sql.VarChar(36), settingsId)
+        .input("basePrice", sql.Decimal(10, 2), Number(basePrice))
+        .input("textPrice", sql.Decimal(10, 2), Number(textPrice))
+        .input("imagePrice", sql.Decimal(10, 2), Number(imagePrice))
+        .input("graphicPrice", sql.Decimal(10, 2), Number(graphicPrice))
+        .input("designPrice", sql.Decimal(10, 2), Number(designPrice))
+        .input("embroiderySurcharge", sql.Decimal(10, 2), Number(embroiderySurcharge))
+        .input("puffSurcharge", sql.Decimal(10, 2), Number(puffSurcharge))
+        .query(`
+          UPDATE CustomizerSettings
+          SET basePrice = @basePrice, textPrice = @textPrice, imagePrice = @imagePrice,
+              graphicPrice = @graphicPrice, designPrice = @designPrice,
+              embroiderySurcharge = @embroiderySurcharge, puffSurcharge = @puffSurcharge,
+              updatedAt = GETDATE()
+          WHERE id = @id
+        `);
+    }
+
+    return res.json({ message: "Customizer pricing settings updated successfully." });
+  } catch (err) {
+    console.error("Update Customizer Settings Error:", err.message);
+    return res.status(500).json({ error: "Server error updating customizer settings." });
+  }
+});
+
 export default router;
