@@ -115,9 +115,11 @@ router.post("/", async (req, res) => {
         .input("size", sql.NVarChar(10), item.size)
         .input("quantity", sql.Int, item.quantity)
         .input("description", sql.NVarChar(1000), item.description || null)
+        .input("layers", sql.NVarChar(sql.MAX), item.layers ? JSON.stringify(item.layers) : null)
+        .input("backImage", sql.VarChar(sql.MAX), item.backImage || null)
         .query(`
-          INSERT INTO OrderItems (orderId, productId, name, price, image, color, size, quantity, description)
-          VALUES (@orderId, @productId, @name, @price, @image, @color, @size, @quantity, @description)
+          INSERT INTO OrderItems (orderId, productId, name, price, image, color, size, quantity, description, layers, backImage)
+          VALUES (@orderId, @productId, @name, @price, @image, @color, @size, @quantity, @description, @layers, @backImage)
         `);
 
       // Decrease stock if it is a catalog product (not a custom design)

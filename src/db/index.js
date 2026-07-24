@@ -82,7 +82,10 @@ export async function getConnection() {
             ('s2', 'Atelier Series', 'THE ATELIER SILHOUETTE', 'Vintage taupe heavyweight cotton tailored with tonal contrast stitching and centered yourTee brand typography.', '/hero_taupe_studio.png', '/shop', 'rgba(212, 175, 55, 0.15)', 'ATELIER 05', '[51.50° N, 0.12° W]', 1),
             ('s3', 'Exclusive Drop', 'THE ARCHITECT SERIES', 'Geometric line art printed in fine gold ink on heavyweight cotton, designed to structural proportions.', '/hero_architect_back.jpg', '/shop', 'rgba(212, 175, 55, 0.12)', 'SERIES 03', '[35.67° N, 139.65° E]', 2);
         END
+      `);
 
+      // 1. Create table CustomizerSettings if not exists
+      await pool.request().query(`
         IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'CustomizerSettings')
         BEGIN
           CREATE TABLE CustomizerSettings (
@@ -94,33 +97,52 @@ export async function getConnection() {
             designPrice DECIMAL(10, 2) NOT NULL DEFAULT 200.00,
             embroiderySurcharge DECIMAL(10, 2) NOT NULL DEFAULT 350.00,
             puffSurcharge DECIMAL(10, 2) NOT NULL DEFAULT 250.00,
-            heavyCottonPrice DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
-            oversizedBoxyPrice DECIMAL(10, 2) NOT NULL DEFAULT 400.00,
-            supimaLuxuryPrice DECIMAL(10, 2) NOT NULL DEFAULT 800.00,
             createdAt DATETIME NOT NULL DEFAULT GETDATE(),
             updatedAt DATETIME NOT NULL DEFAULT GETDATE()
           );
 
-          INSERT INTO CustomizerSettings (id, basePrice, textPrice, imagePrice, graphicPrice, designPrice, embroiderySurcharge, puffSurcharge, heavyCottonPrice, oversizedBoxyPrice, supimaLuxuryPrice)
-          VALUES ('settings-1', 1499.00, 200.00, 500.00, 150.00, 200.00, 350.00, 250.00, 0.00, 400.00, 800.00);
-        END
-
-        IF EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'CustomizerSettings')
-        BEGIN
-          IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'heavyCottonPrice')
-          BEGIN
-            ALTER TABLE CustomizerSettings ADD heavyCottonPrice DECIMAL(10, 2) NOT NULL DEFAULT 0.00;
-          END
-          IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'oversizedBoxyPrice')
-          BEGIN
-            ALTER TABLE CustomizerSettings ADD oversizedBoxyPrice DECIMAL(10, 2) NOT NULL DEFAULT 400.00;
-          END
-          IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'supimaLuxuryPrice')
-          BEGIN
-            ALTER TABLE CustomizerSettings ADD supimaLuxuryPrice DECIMAL(10, 2) NOT NULL DEFAULT 800.00;
-          END
+          INSERT INTO CustomizerSettings (id, basePrice, textPrice, imagePrice, graphicPrice, designPrice, embroiderySurcharge, puffSurcharge)
+          VALUES ('settings-1', 1499.00, 200.00, 500.00, 150.00, 200.00, 350.00, 250.00);
         END
       `);
+
+      // 2. Add fabric specification columns sequentially to bypass batch compilation checks
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'heavyCottonPrice')
+        BEGIN
+          ALTER TABLE CustomizerSettings ADD heavyCottonPrice DECIMAL(10, 2) NOT NULL DEFAULT 0.00;
+        END
+      `);
+
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'oversizedBoxyPrice')
+        BEGIN
+          ALTER TABLE CustomizerSettings ADD oversizedBoxyPrice DECIMAL(10, 2) NOT NULL DEFAULT 400.00;
+        END
+      `);
+
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'supimaLuxuryPrice')
+        BEGIN
+          ALTER TABLE CustomizerSettings ADD supimaLuxuryPrice DECIMAL(10, 2) NOT NULL DEFAULT 800.00;
+        END
+      `);
+
+      // 3. Add layers and backImage columns to OrderItems for customized design details
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'OrderItems' AND COLUMN_NAME = 'layers')
+        BEGIN
+          ALTER TABLE OrderItems ADD layers NVARCHAR(MAX) NULL;
+        END
+      `);
+
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'OrderItems' AND COLUMN_NAME = 'backImage')
+        BEGIN
+          ALTER TABLE OrderItems ADD backImage VARCHAR(MAX) NULL;
+        END
+      `);
+
     } catch (migErr) {
       console.warn("Auto-migration warning:", migErr.message);
     }

@@ -210,10 +210,12 @@ router.get("/orders", requireAdmin, async (req, res) => {
           name: i.name,
           price: Number(i.price),
           image: i.image,
+          backImage: i.backImage || null,
           color: i.color,
           size: i.size,
           quantity: i.quantity,
-          description: i.description || null
+          description: i.description || null,
+          layers: i.layers ? JSON.parse(i.layers) : null
         })),
         createdAt: o.createdAt,
       });
