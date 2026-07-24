@@ -118,7 +118,7 @@ router.get("/designs", requireAdmin, async (req, res) => {
   try {
     const pool = await getConnection();
     const result = await pool.request().query(`
-      SELECT TOP 300 D.id, D.name, D.garment, D.color, D.fabric, D.price, D.preview, D.createdAt,
+      SELECT TOP 300 D.id, D.name, D.garment, D.color, D.fabric, D.price, D.preview, D.previewBack, D.createdAt,
              U.name AS userName, U.email AS userEmail
       FROM Designs D
       LEFT JOIN Users U ON D.userId = U.id
@@ -133,6 +133,7 @@ router.get("/designs", requireAdmin, async (req, res) => {
       fabric: d.fabric,
       price: Number(d.price),
       preview: d.preview || null,
+      previewBack: d.previewBack || null,
       user: {
         name: d.userName || "Unknown",
         email: d.userEmail || "",

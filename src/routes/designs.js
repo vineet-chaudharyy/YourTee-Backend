@@ -14,6 +14,7 @@ const saveSchema = z.object({
   price: z.number().nonnegative().optional().default(1499),
   layers: z.array(z.any()).max(100).optional().default([]),
   preview: z.string().max(2500000).optional().default(""),
+  previewBack: z.string().max(2500000).optional().default(""),
 });
 
 router.get("/", requireAuth, async (req, res) => {
@@ -21,7 +22,7 @@ router.get("/", requireAuth, async (req, res) => {
     const pool = await getConnection();
     const result = await pool.request()
       .input("userId", sql.VarChar(36), req.user.id)
-      .query("SELECT id, name, garment, color, fabric, price, preview, layers, updatedAt FROM Designs WHERE userId = @userId ORDER BY updatedAt DESC");
+      .query("SELECT id, name, garment, color, fabric, price, preview, previewBack, layers, updatedAt FROM Designs WHERE userId = @userId ORDER BY updatedAt DESC");
 
     const designs = result.recordset.map((d) => {
       let layersParsed = [];
@@ -40,6 +41,7 @@ router.get("/", requireAuth, async (req, res) => {
         fabric: d.fabric,
         price: Number(d.price),
         preview: d.preview || null,
+        previewBack: d.previewBack || null,
         layers: layersParsed,
         updatedAt: d.updatedAt,
       };
@@ -58,7 +60,7 @@ router.post("/", requireAuth, async (req, res) => {
     return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
   }
 
-  const { name, garment, color, fabric, price, layers, preview } = parsed.data;
+  const { name, garment, color, fabric, price, layers, preview, previewBack } = parsed.data;
   const designId = crypto.randomUUID();
   const layersStr = JSON.stringify(layers);
 
@@ -74,9 +76,10 @@ router.post("/", requireAuth, async (req, res) => {
       .input("price", sql.Decimal(10, 2), price)
       .input("layers", sql.NVarChar(sql.MAX), layersStr)
       .input("preview", sql.NVarChar(sql.MAX), preview)
+      .input("previewBack", sql.NVarChar(sql.MAX), previewBack)
       .query(`
-        INSERT INTO Designs (id, userId, name, garment, color, fabric, price, layers, preview, createdAt, updatedAt)
-        VALUES (@id, @userId, @name, @garment, @color, @fabric, @price, @layers, @preview, GETDATE(), GETDATE())
+        INSERT INTO Designs (id, userId, name, garment, color, fabric, price, layers, preview, previewBack, createdAt, updatedAt)
+        VALUES (@id, @userId, @name, @garment, @color, @fabric, @price, @layers, @preview, @previewBack, GETDATE(), GETDATE())
       `);
 
     return res.status(201).json({ id: designId });

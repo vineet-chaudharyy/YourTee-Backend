@@ -110,21 +110,21 @@ export async function getConnection() {
       await pool.request().query(`
         IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'heavyCottonPrice')
         BEGIN
-          ALTER TABLE CustomizerSettings ADD heavyCottonPrice DECIMAL(10, 2) NOT NULL DEFAULT 0.00;
+          EXEC sp_executesql N'ALTER TABLE CustomizerSettings ADD heavyCottonPrice DECIMAL(10, 2) NOT NULL DEFAULT 0.00';
         END
       `);
 
       await pool.request().query(`
         IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'oversizedBoxyPrice')
         BEGIN
-          ALTER TABLE CustomizerSettings ADD oversizedBoxyPrice DECIMAL(10, 2) NOT NULL DEFAULT 400.00;
+          EXEC sp_executesql N'ALTER TABLE CustomizerSettings ADD oversizedBoxyPrice DECIMAL(10, 2) NOT NULL DEFAULT 400.00';
         END
       `);
 
       await pool.request().query(`
         IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'CustomizerSettings' AND COLUMN_NAME = 'supimaLuxuryPrice')
         BEGIN
-          ALTER TABLE CustomizerSettings ADD supimaLuxuryPrice DECIMAL(10, 2) NOT NULL DEFAULT 800.00;
+          EXEC sp_executesql N'ALTER TABLE CustomizerSettings ADD supimaLuxuryPrice DECIMAL(10, 2) NOT NULL DEFAULT 800.00';
         END
       `);
 
@@ -132,14 +132,22 @@ export async function getConnection() {
       await pool.request().query(`
         IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'OrderItems' AND COLUMN_NAME = 'layers')
         BEGIN
-          ALTER TABLE OrderItems ADD layers NVARCHAR(MAX) NULL;
+          EXEC sp_executesql N'ALTER TABLE OrderItems ADD layers NVARCHAR(MAX) NULL';
         END
       `);
 
       await pool.request().query(`
         IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'OrderItems' AND COLUMN_NAME = 'backImage')
         BEGIN
-          ALTER TABLE OrderItems ADD backImage VARCHAR(MAX) NULL;
+          EXEC sp_executesql N'ALTER TABLE OrderItems ADD backImage VARCHAR(MAX) NULL';
+        END
+      `);
+
+      // 4. Add previewBack column to Designs table for holding rear customizer snapshots
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Designs' AND COLUMN_NAME = 'previewBack')
+        BEGIN
+          EXEC sp_executesql N'ALTER TABLE Designs ADD previewBack VARCHAR(MAX) NULL';
         END
       `);
 
