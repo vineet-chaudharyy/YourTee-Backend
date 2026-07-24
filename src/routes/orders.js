@@ -12,10 +12,12 @@ const orderSchema = z.object({
     name: z.string(),
     price: z.number(),
     image: z.string(),
+    backImage: z.string().nullable().optional().default(null),
     color: z.string(),
     size: z.string(),
     quantity: z.number().int().positive(),
-    description: z.string().nullable().optional().default(null)
+    description: z.string().nullable().optional().default(null),
+    layers: z.array(z.any()).nullable().optional().default(null)
   })).min(1),
   subtotal: z.number().nonnegative(),
   shipping: z.number().nonnegative(),
