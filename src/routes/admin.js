@@ -232,7 +232,7 @@ router.get("/orders", requireAdmin, async (req, res) => {
 // PATCH /api/admin/orders/:id/status - Update Order Status (Admin only)
 router.patch("/orders/:id/status", requireAdmin, async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, carrier, tracking } = req.body;
 
   if (!status) {
     return res.status(400).json({ error: "Status is required." });
@@ -249,16 +249,29 @@ router.patch("/orders/:id/status", requireAdmin, async (req, res) => {
 
   try {
     const pool = await getConnection();
-    const result = await pool.request()
+    
+    let query = "UPDATE Orders SET status = @status, updatedAt = GETDATE()";
+    const request = pool.request()
       .input("id", sql.VarChar(36), id)
-      .input("status", sql.VarChar(50), status)
-      .query("UPDATE Orders SET status = @status, updatedAt = GETDATE() WHERE id = @id");
+      .input("status", sql.VarChar(50), status);
+
+    if (carrier !== undefined) {
+      query += ", carrier = @carrier";
+      request.input("carrier", sql.VarChar(50), carrier);
+    }
+    if (tracking !== undefined) {
+      query += ", tracking = @tracking";
+      request.input("tracking", sql.VarChar(100), tracking);
+    }
+
+    query += " WHERE id = @id";
+    const result = await request.query(query);
 
     if (result.rowsAffected[0] === 0) {
       return res.status(404).json({ error: "Order not found." });
     }
 
-    return res.json({ ok: true, status });
+    return res.json({ ok: true, status, carrier, tracking });
   } catch (err) {
     console.error("Update Order Status Error:", err.message);
     return res.status(500).json({ error: "Server error updating order status." });
