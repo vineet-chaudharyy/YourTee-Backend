@@ -165,6 +165,22 @@ export async function getConnection() {
           );
         END
       `);
+
+      // 6. Add isVerified and verificationToken columns to Users table
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Users' AND COLUMN_NAME = 'isVerified')
+        BEGIN
+          ALTER TABLE Users ADD isVerified BIT NOT NULL DEFAULT 0;
+          EXEC('UPDATE Users SET isVerified = 1');
+        END
+      `);
+
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Users' AND COLUMN_NAME = 'verificationToken')
+        BEGIN
+          ALTER TABLE Users ADD verificationToken VARCHAR(100) NULL;
+        END
+      `);
     } catch (migErr) {
       console.warn("Auto-migration warning:", migErr.message);
     }

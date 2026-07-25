@@ -2,6 +2,7 @@ import { Router } from "express";
 import { getConnection, sql } from "../db/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { z } from "zod";
+import { sendOrderConfirmationEmail } from "../utils/email.js";
 
 const router = Router();
 
@@ -166,6 +167,17 @@ router.post("/", async (req, res) => {
         }
       }
     }
+
+    // Send order confirmation email
+    await sendOrderConfirmationEmail(email, {
+      id,
+      name,
+      subtotal,
+      shipping,
+      total,
+      paymentMethod,
+      items
+    });
 
     return res.status(201).json({ success: true, orderId: id });
   } catch (err) {

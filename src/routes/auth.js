@@ -4,6 +4,7 @@ import { SignJWT } from "jose";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
+import { sendVerificationEmail } from "../utils/email.js";
 
 const router = Router();
 const AUTH_COOKIE = "yt_token";
@@ -71,6 +72,7 @@ router.post("/register", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 12);
     const userId = crypto.randomUUID();
+    const verificationToken = crypto.randomBytes(32).toString("hex");
 
     await pool.request()
       .input("id", sql.VarChar(36), userId)
@@ -78,21 +80,18 @@ router.post("/register", async (req, res) => {
       .input("email", sql.NVarChar(255), email)
       .input("passwordHash", sql.VarChar(255), passwordHash)
       .input("role", sql.VarChar(20), "user")
+      .input("verificationToken", sql.VarChar(100), verificationToken)
       .query(`
-        INSERT INTO Users (id, name, email, passwordHash, role, createdAt, updatedAt)
-        VALUES (@id, @name, @email, @passwordHash, @role, GETDATE(), GETDATE())
+        INSERT INTO Users (id, name, email, passwordHash, role, isVerified, verificationToken, createdAt, updatedAt)
+        VALUES (@id, @name, @email, @passwordHash, @role, 0, @verificationToken, GETDATE(), GETDATE())
       `);
 
-    const token = await signAuthToken({
-      sub: userId,
-      name,
-      email,
-      role: "user",
-    });
+    // Dispatch verification email (or log to terminal in local development mode)
+    await sendVerificationEmail(email, name, verificationToken);
 
-    res.cookie(AUTH_COOKIE, token, cookieOptions);
     return res.status(201).json({
-      user: { id: userId, name, email, role: "user" },
+      success: true,
+      message: "Registration successful! Please verify your email address via the link sent to your inbox."
     });
   } catch (err) {
     console.error("Register Error:", err.message);
@@ -112,7 +111,7 @@ router.post("/login", async (req, res) => {
     
     const userResult = await pool.request()
       .input("email", sql.NVarChar(255), email)
-      .query("SELECT id, name, email, passwordHash, role FROM Users WHERE email = @email");
+      .query("SELECT id, name, email, passwordHash, role, isVerified FROM Users WHERE email = @email");
 
     const user = userResult.recordset[0];
     const dummyHash = "$2a$12$C6UzMDM.H6dfI/f/IKcEeO000000000000000000000000000000";
@@ -126,6 +125,10 @@ router.post("/login", async (req, res) => {
 
     if (!user || !ok) {
       return res.status(401).json({ error: "Invalid email or password." });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({ error: "Please verify your email address before logging in. A verification link was sent to your inbox." });
     }
 
     const token = await signAuthToken({
@@ -180,8 +183,8 @@ router.post("/google", async (req, res) => {
         .input("passwordHash", sql.VarChar(255), dummyPasswordHash)
         .input("role", sql.VarChar(20), "user")
         .query(`
-          INSERT INTO Users (id, name, email, passwordHash, role, createdAt, updatedAt)
-          VALUES (@id, @name, @email, @passwordHash, @role, GETDATE(), GETDATE())
+          INSERT INTO Users (id, name, email, passwordHash, role, isVerified, verificationToken, createdAt, updatedAt)
+          VALUES (@id, @name, @email, @passwordHash, @role, 1, NULL, GETDATE(), GETDATE())
         `);
       
       user = { id: userId, name, email, role: "user" };
@@ -216,6 +219,37 @@ router.get("/me", (req, res) => {
     return res.json({ user: null });
   }
   return res.json({ user: req.user });
+});
+
+// GET /api/auth/verify-email
+router.get("/verify-email", async (req, res) => {
+  const { token } = req.query;
+
+  if (!token) {
+    return res.status(400).send("<h1>Verification token is missing.</h1>");
+  }
+
+  try {
+    const pool = await getConnection();
+    const userResult = await pool.request()
+      .input("token", sql.VarChar(100), token)
+      .query("SELECT id FROM Users WHERE verificationToken = @token");
+
+    const user = userResult.recordset[0];
+    if (!user) {
+      return res.status(400).send("<h1>Invalid or expired verification link.</h1>");
+    }
+
+    await pool.request()
+      .input("id", sql.VarChar(36), user.id)
+      .query("UPDATE Users SET isVerified = 1, verificationToken = NULL WHERE id = @id");
+
+    // Redirect to frontend login page with a verified=true flag
+    return res.redirect("http://localhost:3007/login?verified=true");
+  } catch (err) {
+    console.error("Verify Email Error:", err.message);
+    return res.status(500).send("<h1>Server error during email verification.</h1>");
+  }
 });
 
 export default router;
