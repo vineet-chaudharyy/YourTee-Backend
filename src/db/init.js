@@ -348,30 +348,35 @@ async function initializeDatabase() {
     `);
 
     // Automatic Default Product Seeding
-    console.log("Seeding default products catalog...");
-    await pool.request().query("DELETE FROM Products WHERE id IN ('p1','p2','p3','p4','p5','p6','p7','p8')");
+    console.log("Seeding default products catalog if not present...");
     for (const p of defaultProducts) {
-      await pool.request()
+      const checkRes = await pool.request()
         .input("id", sql.VarChar(36), p.id)
-        .input("slug", sql.NVarChar(120), p.slug)
-        .input("name", sql.NVarChar(120), p.name)
-        .input("collection", sql.NVarChar(60), p.collection)
-        .input("price", sql.Decimal(10, 2), p.price)
-        .input("originalPrice", sql.Decimal(10, 2), p.originalPrice)
-        .input("description", sql.NVarChar(sql.MAX), p.description)
-        .input("fabric", sql.NVarChar(120), p.fabric)
-        .input("gsm", sql.Int, p.gsm)
-        .input("colors", sql.NVarChar(sql.MAX), p.colors)
-        .input("sizes", sql.NVarChar(sql.MAX), p.sizes)
-        .input("image", sql.VarChar(500), p.image)
-        .input("gallery", sql.NVarChar(sql.MAX), p.gallery)
-        .input("tag", sql.NVarChar(60), p.tag)
-        .query(`
-          INSERT INTO Products (id, slug, name, collection, price, originalPrice, description, fabric, gsm, colors, sizes, image, gallery, tag, createdAt, updatedAt)
-          VALUES (@id, @slug, @name, @collection, @price, @originalPrice, @description, @fabric, @gsm, @colors, @sizes, @image, @gallery, @tag, GETDATE(), GETDATE())
-        `);
+        .query("SELECT id FROM Products WHERE id = @id");
+
+      if (checkRes.recordset.length === 0) {
+        await pool.request()
+          .input("id", sql.VarChar(36), p.id)
+          .input("slug", sql.NVarChar(120), p.slug)
+          .input("name", sql.NVarChar(120), p.name)
+          .input("collection", sql.NVarChar(60), p.collection)
+          .input("price", sql.Decimal(10, 2), p.price)
+          .input("originalPrice", sql.Decimal(10, 2), p.originalPrice)
+          .input("description", sql.NVarChar(sql.MAX), p.description)
+          .input("fabric", sql.NVarChar(120), p.fabric)
+          .input("gsm", sql.Int, p.gsm)
+          .input("colors", sql.NVarChar(sql.MAX), p.colors)
+          .input("sizes", sql.NVarChar(sql.MAX), p.sizes)
+          .input("image", sql.VarChar(500), p.image)
+          .input("gallery", sql.NVarChar(sql.MAX), p.gallery)
+          .input("tag", sql.NVarChar(60), p.tag)
+          .query(`
+            INSERT INTO Products (id, slug, name, collection, price, originalPrice, description, fabric, gsm, colors, sizes, image, gallery, tag, createdAt, updatedAt)
+            VALUES (@id, @slug, @name, @collection, @price, @originalPrice, @description, @fabric, @gsm, @colors, @sizes, @image, @gallery, @tag, GETDATE(), GETDATE())
+          `);
+      }
     }
-    console.log(`✓ Seeded ${defaultProducts.length} default products.`);
+    console.log("✓ Default products catalog seed checked.");
 
     console.log("Database tables initialized successfully!");
   } catch (err) {
