@@ -13,6 +13,7 @@ import paymentRouter from "./routes/payment.js";
 import productsRouter from "./routes/products.js";
 import ordersRouter from "./routes/orders.js";
 import heroRouter from "./routes/hero.js";
+import contactRouter from "./routes/contact.js";
 
 dotenv.config();
 
@@ -62,6 +63,7 @@ app.use("/api/payment", paymentRouter);
 app.use("/api/products", productsRouter);
 app.use("/api/orders", ordersRouter);
 app.use("/api/hero", heroRouter);
+app.use("/api/contact", contactRouter);
 
 app.use((err, req, res, next) => {
   console.error("Unhandled Error:", err.stack);

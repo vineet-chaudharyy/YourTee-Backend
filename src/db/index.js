@@ -151,6 +151,20 @@ export async function getConnection() {
         END
       `);
 
+      // 5. Create ContactMessages table if not exists
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'ContactMessages')
+        BEGIN
+          CREATE TABLE ContactMessages (
+            id VARCHAR(36) PRIMARY KEY,
+            name NVARCHAR(120) NOT NULL,
+            email NVARCHAR(255) NOT NULL,
+            subject NVARCHAR(255) NOT NULL,
+            message NVARCHAR(MAX) NOT NULL,
+            createdAt DATETIME NOT NULL DEFAULT GETDATE()
+          );
+        END
+      `);
     } catch (migErr) {
       console.warn("Auto-migration warning:", migErr.message);
     }
