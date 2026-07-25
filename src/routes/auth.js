@@ -4,7 +4,7 @@ import { SignJWT } from "jose";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import { z } from "zod";
-import { sendVerificationEmail } from "../utils/email.js";
+import { sendVerificationEmail, sendPasswordResetEmail } from "../utils/email.js";
 
 const router = Router();
 const AUTH_COOKIE = "yt_token";
@@ -249,6 +249,128 @@ router.get("/verify-email", async (req, res) => {
   } catch (err) {
     console.error("Verify Email Error:", err.message);
     return res.status(500).send("<h1>Server error during email verification.</h1>");
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Password reset
+// ---------------------------------------------------------------------------
+
+const RESET_TTL_MINUTES = 60; // reset links are valid for 1 hour
+
+const hashToken = (t) => crypto.createHash("sha256").update(t).digest("hex");
+
+const forgotSchema = z.object({
+  email: z.string().trim().toLowerCase().email(),
+});
+
+const resetSchema = z.object({
+  token: z.string().trim().min(32),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(100)
+    .regex(/[A-Za-z]/, "Include a letter")
+    .regex(/[0-9]/, "Include a number"),
+});
+
+// POST /api/auth/forgot-password
+// Always answers 200 with the same message — revealing whether an address is
+// registered would turn this into an account-enumeration oracle.
+router.post("/forgot-password", async (req, res) => {
+  const parsed = forgotSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Please enter a valid email address." });
+  }
+  const { email } = parsed.data;
+  const genericResponse = {
+    success: true,
+    message: "If an account exists for that address, we've sent a reset link.",
+  };
+
+  try {
+    const pool = await getConnection();
+    const result = await pool.request()
+      .input("email", sql.NVarChar(255), email)
+      .query("SELECT id, name FROM Users WHERE email = @email");
+
+    const user = result.recordset[0];
+    if (!user) return res.json(genericResponse);
+
+    const token = crypto.randomBytes(32).toString("hex");
+
+    // Expiry is computed AND compared entirely in SQL against GETUTCDATE().
+    // Round-tripping a JS Date through DATETIME is not safe here: the driver
+    // returns the stored local time tagged as UTC, which on an IST server made
+    // already-expired tokens read as valid for another 5.5 hours.
+    await pool.request()
+      .input("id", sql.VarChar(36), user.id)
+      .input("hash", sql.VarChar(64), hashToken(token))
+      .input("ttlMinutes", sql.Int, RESET_TTL_MINUTES)
+      .query(`
+        UPDATE Users
+        SET resetTokenHash = @hash,
+            resetTokenExpires = DATEADD(minute, @ttlMinutes, GETUTCDATE())
+        WHERE id = @id
+      `);
+
+    await sendPasswordResetEmail(email, user.name, token);
+    return res.json(genericResponse);
+  } catch (err) {
+    console.error("Forgot Password Error:", err.message);
+    return res.status(500).json({ error: "Server error requesting a password reset." });
+  }
+});
+
+// POST /api/auth/reset-password
+router.post("/reset-password", async (req, res) => {
+  const parsed = resetSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+  }
+  const { token, password } = parsed.data;
+
+  try {
+    const pool = await getConnection();
+    // Expiry is checked in SQL (see the note in /forgot-password) so the match
+    // never depends on how the driver interprets DATETIME timezones.
+    const result = await pool.request()
+      .input("hash", sql.VarChar(64), hashToken(token))
+      .query(`
+        SELECT id FROM Users
+        WHERE resetTokenHash = @hash
+          AND resetTokenExpires IS NOT NULL
+          AND resetTokenExpires > GETUTCDATE()
+      `);
+
+    const user = result.recordset[0];
+    if (!user) {
+      return res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    // Clearing the token makes the link single-use. A successful reset also
+    // proves control of the inbox, so verify the account at the same time —
+    // otherwise an unverified user could reset and still be unable to log in.
+    await pool.request()
+      .input("id", sql.VarChar(36), user.id)
+      .input("passwordHash", sql.VarChar(255), passwordHash)
+      .query(`
+        UPDATE Users
+        SET passwordHash = @passwordHash,
+            resetTokenHash = NULL,
+            resetTokenExpires = NULL,
+            isVerified = 1,
+            verificationToken = NULL,
+            updatedAt = GETDATE()
+        WHERE id = @id
+      `);
+
+    return res.json({ success: true, message: "Your password has been updated. You can now sign in." });
+  } catch (err) {
+    console.error("Reset Password Error:", err.message);
+    return res.status(500).json({ error: "Server error resetting your password." });
   }
 });
 

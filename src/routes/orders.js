@@ -6,6 +6,31 @@ import { sendOrderConfirmationEmail } from "../utils/email.js";
 
 const router = Router();
 
+// Order IDs are short and guessable (YT-#####), so knowing an ID alone must not
+// grant access to the customer's personal data or to the return/refund flow.
+// A caller is treated as the order's owner if they are signed in as the user who
+// placed it, are an admin, or can supply the email address the order was placed
+// with (this keeps guest tracking and guest returns working).
+function isOrderOwner(req, order, suppliedEmail) {
+  if (req.user?.role === "admin") return true;
+  if (req.user && order.userId && req.user.id === order.userId) return true;
+  if (typeof suppliedEmail === "string" && order.email) {
+    return suppliedEmail.trim().toLowerCase() === String(order.email).trim().toLowerCase();
+  }
+  return false;
+}
+
+// "Vineet Chaudhary" -> "V*** C***" — enough for a guest to recognise their own
+// order on the tracking page without exposing the customer's name to a stranger.
+function maskName(name) {
+  if (!name) return null;
+  return String(name)
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => `${part[0]}***`)
+    .join(" ");
+}
+
 const orderSchema = z.object({
   id: z.string().trim().min(5),
   items: z.array(z.object({
@@ -257,11 +282,15 @@ router.get("/:id", async (req, res) => {
     }
     
     const o = orderRes.recordset[0];
-    
+
+    // Anyone with the ID may see delivery progress, but personal data is only
+    // returned to the owner (signed in, or proving the order email via ?email=).
+    const isOwner = isOrderOwner(req, o, req.query.email);
+
     const itemsRes = await pool.request()
       .input("orderId", sql.VarChar(36), id)
       .query("SELECT * FROM OrderItems WHERE orderId = @orderId");
-      
+
     const order = {
       id: o.id,
       date: o.date,
@@ -271,15 +300,18 @@ router.get("/:id", async (req, res) => {
       status: o.status,
       paymentMethod: o.paymentMethod,
       paymentId: o.paymentId,
-      name: o.name,
-      email: o.email,
-      phone: o.phone,
+      name: isOwner ? o.name : maskName(o.name),
+      email: isOwner ? o.email : null,
+      phone: isOwner ? o.phone : null,
       carrier: o.carrier,
       tracking: o.tracking,
       returnReason: o.returnReason || null,
-      returnImage: o.returnImage || null,
-      returnAddress: o.returnAddress || null,
-      bankDetails: o.bankDetails || null,
+      returnImage: isOwner ? (o.returnImage || null) : null,
+      returnAddress: isOwner ? (o.returnAddress || null) : null,
+      bankDetails: isOwner ? (o.bankDetails || null) : null,
+      // Tells the client whether it must ask for the order email to unlock
+      // the return flow / full details.
+      verified: isOwner,
       items: itemsRes.recordset.map(i => ({
         productId: i.productId,
         name: i.name,
@@ -302,7 +334,7 @@ router.get("/:id", async (req, res) => {
 // POST /api/orders/:id/return - Request a return for a delivered order
 router.post("/:id/return", async (req, res) => {
   const { id } = req.params;
-  const { reason, image, pickupAddress, bankDetails } = req.body;
+  const { reason, image, pickupAddress, bankDetails, email } = req.body;
 
   if (!reason || reason.trim() === "") {
     return res.status(400).json({ error: "Reason for return is required." });
@@ -310,17 +342,26 @@ router.post("/:id/return", async (req, res) => {
 
   try {
     const pool = await getConnection();
-    
+
     // Fetch order first to check status
     const orderRes = await pool.request()
       .input("id", sql.VarChar(36), id)
-      .query("SELECT status FROM Orders WHERE id = @id");
-      
+      .query("SELECT status, userId, email FROM Orders WHERE id = @id");
+
     if (orderRes.recordset.length === 0) {
       return res.status(404).json({ error: "Order not found." });
     }
 
     const order = orderRes.recordset[0];
+
+    // Without this check anyone could file a return against a stranger's order
+    // and redirect the refund to their own bank account.
+    if (!isOrderOwner(req, order, email)) {
+      return res.status(403).json({
+        error: "Please confirm the email address this order was placed with to request a return.",
+      });
+    }
+
     if (order.status !== "Delivered") {
       return res.status(400).json({ error: "Only delivered products can be returned." });
     }

@@ -181,6 +181,39 @@ export async function getConnection() {
           ALTER TABLE Users ADD verificationToken VARCHAR(100) NULL;
         END
       `);
+
+      // 7. Password reset. We store a SHA-256 *hash* of the token so that read
+      // access to the database is not enough to take over an account.
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Users' AND COLUMN_NAME = 'resetTokenHash')
+        BEGIN
+          ALTER TABLE Users ADD resetTokenHash VARCHAR(64) NULL;
+        END
+      `);
+
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'Users' AND COLUMN_NAME = 'resetTokenExpires')
+        BEGIN
+          ALTER TABLE Users ADD resetTokenExpires DATETIME NULL;
+        END
+      `);
+
+      // 8. Product reviews — previously client-only state that vanished on reload.
+      await pool.request().query(`
+        IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'Reviews')
+        BEGIN
+          CREATE TABLE Reviews (
+            id VARCHAR(36) PRIMARY KEY,
+            productId VARCHAR(36) NOT NULL,
+            userId VARCHAR(36) NULL,
+            name NVARCHAR(120) NOT NULL,
+            rating INT NOT NULL,
+            comment NVARCHAR(2000) NOT NULL,
+            createdAt DATETIME NOT NULL DEFAULT GETDATE()
+          );
+          CREATE INDEX IX_Reviews_productId ON Reviews (productId);
+        END
+      `);
     } catch (migErr) {
       console.warn("Auto-migration warning:", migErr.message);
     }

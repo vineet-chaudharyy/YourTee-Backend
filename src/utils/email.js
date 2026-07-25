@@ -20,6 +20,62 @@ function getTransporter() {
 
 const fromAddress = process.env.SMTP_FROM || "YourTee <no-reply@yourtee.in>";
 
+// Public origin of the storefront, used to build links inside emails.
+const appUrl = (process.env.APP_URL || "http://localhost:3007").replace(/\/+$/, "");
+
+/**
+ * Sends a password reset link. The token is single-use and expires in 1 hour.
+ */
+export async function sendPasswordResetEmail(toEmail, name, token) {
+  const resetLink = `${appUrl}/reset-password?token=${token}`;
+  const transporter = getTransporter();
+
+  const subject = "Reset Your YourTee Password";
+  const html = `
+    <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; background-color: #ffffff; color: #101010; border: 1px solid #eaeaea;">
+      <div style="text-align: center; margin-bottom: 30px;">
+        <h2 style="font-family: Georgia, serif; font-size: 26px; font-weight: normal; letter-spacing: 2px; color: #D4AF37; margin: 0;">YOURTEE</h2>
+        <p style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.15em; color: #888888; margin-top: 5px;">Account Security</p>
+      </div>
+
+      <p style="font-size: 15px; line-height: 1.6; color: #333333;">Hello ${name || "there"},</p>
+
+      <p style="font-size: 15px; line-height: 1.6; color: #333333;">We received a request to reset the password for your YourTee account. Click the button below to choose a new one. This link expires in <strong>1 hour</strong> and can only be used once.</p>
+
+      <div style="text-align: center; margin: 35px 0;">
+        <a href="${resetLink}" style="background-color: #D4AF37; color: #0c0a06; text-decoration: none; padding: 14px 30px; font-size: 12px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.15em; display: inline-block;">
+          Reset Password
+        </a>
+      </div>
+
+      <p style="font-size: 13px; line-height: 1.6; color: #666666;">Or copy and paste this link in your web browser:</p>
+      <p style="font-size: 12px; line-height: 1.6; word-break: break-all; color: #D4AF37; font-family: monospace; background-color: #f9f9f9; padding: 10px; border: 1px solid #eee;">
+        ${resetLink}
+      </p>
+
+      <hr style="border: 0; border-top: 1px solid #eaeaea; margin: 30px 0;" />
+
+      <p style="font-size: 12px; line-height: 1.6; color: #999999; text-align: center;">
+        If you did not request a password reset, you can safely ignore this email — your password will not change.
+      </p>
+    </div>
+  `;
+
+  if (!transporter) {
+    console.log("\n=======================================================");
+    console.log(`🔑  [LOCAL DEV] Password Reset Email to ${toEmail}:`);
+    console.log(`Reset Link: ${resetLink}`);
+    console.log("=======================================================\n");
+    return;
+  }
+
+  try {
+    await transporter.sendMail({ from: fromAddress, to: toEmail, subject, html });
+  } catch (err) {
+    console.error("Nodemailer password reset email error:", err.message);
+  }
+}
+
 /**
  * Sends verification email to new users
  */

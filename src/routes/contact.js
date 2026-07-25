@@ -5,6 +5,8 @@ import crypto from "crypto";
 import { z } from "zod";
 
 const router = Router();
+// Admin-facing message routes are mounted under /api/admin (see server.js)
+const adminRouter = Router();
 
 const contactSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters"),
@@ -44,7 +46,7 @@ router.post("/", async (req, res) => {
 });
 
 // GET /api/admin/contact-messages - Retrieve all messages (Admin only)
-router.get("/admin/contact-messages", requireAdmin, async (req, res) => {
+adminRouter.get("/contact-messages", requireAdmin, async (req, res) => {
   try {
     const pool = await getConnection();
     const result = await pool.request().query("SELECT * FROM ContactMessages ORDER BY createdAt DESC");
@@ -56,7 +58,7 @@ router.get("/admin/contact-messages", requireAdmin, async (req, res) => {
 });
 
 // DELETE /api/admin/contact-messages/:id - Delete a message (Admin only)
-router.delete("/admin/contact-messages/:id", requireAdmin, async (req, res) => {
+adminRouter.delete("/contact-messages/:id", requireAdmin, async (req, res) => {
   const { id } = req.params;
   try {
     const pool = await getConnection();
@@ -75,4 +77,5 @@ router.delete("/admin/contact-messages/:id", requireAdmin, async (req, res) => {
   }
 });
 
+export { adminRouter as contactAdminRouter };
 export default router;
