@@ -3,8 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "YourTee REST API — Express + Microsoft SQL Server",
+  "description": "YourTee REST API — Express + SQLite",
   "main": "src/server.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
@@ -21,11 +24,7 @@
     "express-rate-limit": "^8.6.0",
     "helmet": "^8.3.0",
     "jose": "^5.9.6",
-    "mssql": "^11.0.1",
     "nodemailer": "^9.0.3",
     "zod": "^3.24.1"
-  },
-  "optionalDependencies": {
-    "msnodesqlv8": "^4.4.0"
   }
 }

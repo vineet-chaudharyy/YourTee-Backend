@@ -1,10 +1,11 @@
-import sql from "mssql/msnodesqlv8.js";
-import dotenv from "dotenv";
-
-dotenv.config();
-
-const server = process.env.SQL_SERVER || "(local)\\SQLEXPRESS";
-const database = process.env.SQL_DATABASE || "YourTeeDB";
+/**
+ * Seeds the default product catalogue. The schema itself is created
+ * automatically on first connection (see db/index.js), so this only fills in
+ * starter data for a fresh database — existing products are left untouched.
+ *
+ *   npm run db:init
+ */
+import { getConnection, sql } from "./index.js";
 
 const defaultProducts = [
   {
@@ -153,240 +154,44 @@ const defaultProducts = [
   }
 ];
 
-async function initializeDatabase() {
-  console.log(`Connecting to SQL Server 'master' database on ${server}...`);
-  
-  const masterConfig = {
-    connectionString: `Driver={ODBC Driver 17 for SQL Server};Server=${server};Database=master;Trusted_Connection=Yes;`,
-    options: { trustedConnection: true },
-  };
+async function seedProducts() {
+  const pool = await getConnection();
 
-  let pool;
-  try {
-    pool = await sql.connect(masterConfig);
-    console.log("Checking if database exists...");
-    
-    const dbCheckResult = await pool.request()
-      .input("dbname", sql.NVarChar(128), database)
-      .query("SELECT database_id FROM sys.databases WHERE name = @dbname");
+  const existing = await pool.request().query("SELECT id FROM Products");
+  const present = new Set(existing.recordset.map((r) => r.id));
 
-    if (dbCheckResult.recordset.length === 0) {
-      console.log(`Database '${database}' does not exist. Creating it...`);
-      await pool.request().query(`CREATE DATABASE [${database}]`);
-      console.log(`Database '${database}' created successfully.`);
-    } else {
-      console.log(`Database '${database}' already exists.`);
-    }
-  } catch (err) {
-    console.error("Error creating database:", err.message);
-    process.exit(1);
-  } finally {
-    if (pool) {
-      await pool.close();
-    }
+  let added = 0;
+  for (const p of defaultProducts) {
+    if (present.has(p.id)) continue;
+    await pool
+      .request()
+      .input("id", sql.VarChar(36), p.id)
+      .input("slug", sql.NVarChar(120), p.slug)
+      .input("name", sql.NVarChar(120), p.name)
+      .input("collection", sql.NVarChar(60), p.collection)
+      .input("price", sql.Decimal(10, 2), p.price)
+      .input("originalPrice", sql.Decimal(10, 2), p.originalPrice)
+      .input("description", sql.NVarChar(sql.MAX), p.description)
+      .input("fabric", sql.NVarChar(120), p.fabric)
+      .input("gsm", sql.Int, p.gsm)
+      .input("colors", sql.NVarChar(sql.MAX), p.colors)
+      .input("sizes", sql.NVarChar(sql.MAX), p.sizes)
+      .input("image", sql.VarChar(500), p.image)
+      .input("gallery", sql.NVarChar(sql.MAX), p.gallery)
+      .input("tag", sql.NVarChar(60), p.tag)
+      .query(`
+        INSERT INTO Products (id, slug, name, collection, price, originalPrice, description, fabric, gsm, colors, sizes, image, gallery, tag, createdAt, updatedAt)
+        VALUES (@id, @slug, @name, @collection, @price, @originalPrice, @description, @fabric, @gsm, @colors, @sizes, @image, @gallery, @tag, GETDATE(), GETDATE())
+      `);
+    added++;
   }
 
-  console.log(`Connecting to '${database}' to create tables...`);
-  const dbConfig = {
-    connectionString: `Driver={ODBC Driver 17 for SQL Server};Server=${server};Database=${database};Trusted_Connection=Yes;`,
-    options: { trustedConnection: true },
-  };
-
-  try {
-    pool = await sql.connect(dbConfig);
-    
-    console.log("Creating Users table if it does not exist...");
-    await pool.request().query(`
-      IF OBJECT_ID('Users', 'U') IS NULL
-      BEGIN
-        CREATE TABLE Users (
-          id VARCHAR(36) PRIMARY KEY,
-          name NVARCHAR(80) NOT NULL,
-          email NVARCHAR(255) NOT NULL UNIQUE,
-          passwordHash VARCHAR(255) NOT NULL,
-          role VARCHAR(20) NOT NULL DEFAULT 'user',
-          createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-          updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
-        );
-        CREATE UNIQUE INDEX IX_Users_Email ON Users(email);
-        PRINT 'Users table created.';
-      END
-      ELSE
-      BEGIN
-        PRINT 'Users table already exists.';
-      END
-    `);
-
-    console.log("Creating Designs table if it does not exist...");
-    await pool.request().query(`
-      IF OBJECT_ID('Designs', 'U') IS NULL
-      BEGIN
-        CREATE TABLE Designs (
-          id VARCHAR(36) PRIMARY KEY,
-          userId VARCHAR(36) NOT NULL FOREIGN KEY REFERENCES Users(id) ON DELETE CASCADE,
-          name NVARCHAR(120) NOT NULL,
-          garment NVARCHAR(60) NOT NULL DEFAULT 'Custom Tee',
-          color NVARCHAR(60) NOT NULL DEFAULT 'Onyx',
-          fabric NVARCHAR(60) NOT NULL DEFAULT 'Heavyweight 280 GSM',
-          price DECIMAL(10, 2) NOT NULL DEFAULT 1499.00,
-          layers NVARCHAR(MAX) NULL,
-          preview VARCHAR(MAX) NULL,
-          createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-          updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
-        );
-        CREATE INDEX IX_Designs_UserId ON Designs(userId);
-        PRINT 'Designs table created.';
-      END
-      ELSE
-      BEGIN
-        PRINT 'Designs table already exists.';
-      END
-    `);
-
-    console.log("Creating Products table if it does not exist...");
-    await pool.request().query(`
-      IF OBJECT_ID('Products', 'U') IS NULL
-      BEGIN
-        CREATE TABLE Products (
-          id VARCHAR(36) PRIMARY KEY,
-          slug NVARCHAR(120) NOT NULL UNIQUE,
-          name NVARCHAR(120) NOT NULL,
-          collection NVARCHAR(60) NOT NULL,
-          price DECIMAL(10, 2) NOT NULL,
-          originalPrice DECIMAL(10, 2) NULL,
-          description NVARCHAR(MAX) NOT NULL,
-          fabric NVARCHAR(120) NOT NULL,
-          gsm INT NOT NULL,
-          colors NVARCHAR(MAX) NOT NULL,
-          sizes NVARCHAR(MAX) NOT NULL,
-          image VARCHAR(MAX) NOT NULL,
-          gallery NVARCHAR(MAX) NOT NULL,
-          tag NVARCHAR(60) NULL,
-          createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-          updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
-        );
-        CREATE UNIQUE INDEX IX_Products_Slug ON Products(slug);
-        PRINT 'Products table created.';
-      END
-      ELSE
-      BEGIN
-        PRINT 'Products table already exists.';
-      END
-    `);
-
-    console.log("Checking if Products table image column needs altering...");
-    await pool.request().query(`
-      IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('Products') AND name = 'image' AND max_length = 500)
-      BEGIN
-        ALTER TABLE Products ALTER COLUMN image VARCHAR(MAX) NOT NULL;
-        PRINT 'Products table image column altered to VARCHAR(MAX).';
-      END
-    `);
-
-    console.log("Creating Orders table if it does not exist...");
-    await pool.request().query(`
-      IF OBJECT_ID('Orders', 'U') IS NULL
-      BEGIN
-        CREATE TABLE Orders (
-          id VARCHAR(36) PRIMARY KEY,
-          userId VARCHAR(36) NULL FOREIGN KEY REFERENCES Users(id) ON DELETE SET NULL,
-          date DATETIME2 NOT NULL DEFAULT GETDATE(),
-          subtotal DECIMAL(10, 2) NOT NULL,
-          shipping DECIMAL(10, 2) NOT NULL,
-          total DECIMAL(10, 2) NOT NULL,
-          status VARCHAR(50) NOT NULL DEFAULT 'Placed',
-          paymentMethod VARCHAR(50) NOT NULL DEFAULT 'cod',
-          paymentId VARCHAR(100) NULL,
-          name NVARCHAR(120) NOT NULL,
-          email NVARCHAR(255) NOT NULL,
-          phone VARCHAR(20) NULL,
-          carrier VARCHAR(50) NULL,
-          tracking VARCHAR(100) NULL,
-          createdAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-          updatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
-        );
-        CREATE INDEX IX_Orders_UserId ON Orders(userId);
-        PRINT 'Orders table created.';
-      END
-      ELSE
-      BEGIN
-        PRINT 'Orders table already exists.';
-      END
-    `);
-
-    console.log("Creating OrderItems table if it does not exist...");
-    await pool.request().query(`
-      IF OBJECT_ID('OrderItems', 'U') IS NULL
-      BEGIN
-        CREATE TABLE OrderItems (
-          id INT IDENTITY(1,1) PRIMARY KEY,
-          orderId VARCHAR(36) NOT NULL FOREIGN KEY REFERENCES Orders(id) ON DELETE CASCADE,
-          productId VARCHAR(36) NULL,
-          name NVARCHAR(120) NOT NULL,
-          price DECIMAL(10, 2) NOT NULL,
-          image VARCHAR(MAX) NOT NULL,
-          color NVARCHAR(60) NOT NULL,
-          size NVARCHAR(10) NOT NULL,
-          quantity INT NOT NULL
-        );
-        CREATE INDEX IX_OrderItems_OrderId ON OrderItems(orderId);
-        PRINT 'OrderItems table created.';
-      END
-      ELSE
-      BEGIN
-        PRINT 'OrderItems table already exists.';
-      END
-    `);
-
-    console.log("Checking if OrderItems table image column needs altering...");
-    await pool.request().query(`
-      IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('OrderItems') AND name = 'image' AND max_length = 500)
-      BEGIN
-        ALTER TABLE OrderItems ALTER COLUMN image VARCHAR(MAX) NOT NULL;
-        PRINT 'OrderItems table image column altered to VARCHAR(MAX).';
-      END
-    `);
-
-    // Automatic Default Product Seeding
-    console.log("Seeding default products catalog if not present...");
-    for (const p of defaultProducts) {
-      const checkRes = await pool.request()
-        .input("id", sql.VarChar(36), p.id)
-        .query("SELECT id FROM Products WHERE id = @id");
-
-      if (checkRes.recordset.length === 0) {
-        await pool.request()
-          .input("id", sql.VarChar(36), p.id)
-          .input("slug", sql.NVarChar(120), p.slug)
-          .input("name", sql.NVarChar(120), p.name)
-          .input("collection", sql.NVarChar(60), p.collection)
-          .input("price", sql.Decimal(10, 2), p.price)
-          .input("originalPrice", sql.Decimal(10, 2), p.originalPrice)
-          .input("description", sql.NVarChar(sql.MAX), p.description)
-          .input("fabric", sql.NVarChar(120), p.fabric)
-          .input("gsm", sql.Int, p.gsm)
-          .input("colors", sql.NVarChar(sql.MAX), p.colors)
-          .input("sizes", sql.NVarChar(sql.MAX), p.sizes)
-          .input("image", sql.VarChar(500), p.image)
-          .input("gallery", sql.NVarChar(sql.MAX), p.gallery)
-          .input("tag", sql.NVarChar(60), p.tag)
-          .query(`
-            INSERT INTO Products (id, slug, name, collection, price, originalPrice, description, fabric, gsm, colors, sizes, image, gallery, tag, createdAt, updatedAt)
-            VALUES (@id, @slug, @name, @collection, @price, @originalPrice, @description, @fabric, @gsm, @colors, @sizes, @image, @gallery, @tag, GETDATE(), GETDATE())
-          `);
-      }
-    }
-    console.log("✓ Default products catalog seed checked.");
-
-    console.log("Database tables initialized successfully!");
-  } catch (err) {
-    console.error("Error creating tables:", err.message);
-    process.exit(1);
-  } finally {
-    if (pool) {
-      await pool.close();
-    }
-  }
+  console.log(`Products: ${added} seeded, ${present.size} already present.`);
 }
 
-initializeDatabase();
+seedProducts()
+  .then(() => process.exit(0))
+  .catch((err) => {
+    console.error("Seeding failed:", err.message);
+    process.exit(1);
+  });

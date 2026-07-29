@@ -69,50 +69,78 @@ router.post("/", async (req, res) => {
   // Set userId if user is logged in
   const userId = req.user?.id || null;
 
+  // The whole write runs in one transaction. Previously the stock check and
+  // the decrement were separate round-trips, so two people buying the last
+  // item could both pass the check and oversell it; a failure midway could
+  // also leave an order header with no items.
+  let pool;
+  let tx;
   try {
-    const pool = await getConnection();
-    
-    // Check stock for all catalog products (non-custom items)
-    for (const item of items) {
-      if (item.productId && item.productId !== "custom") {
-        const prodRes = await pool.request()
-          .input("prodId", sql.VarChar(36), item.productId)
-          .query("SELECT name, stock, variantStock FROM Products WHERE id = @prodId");
-        
-        if (prodRes.recordset.length > 0) {
-          const prod = prodRes.recordset[0];
-          let variantStock = {};
-          if (prod.variantStock) {
-            try {
-              variantStock = JSON.parse(prod.variantStock);
-            } catch {
-              variantStock = {};
-            }
-          }
-          
-          const variantKey = `${item.color}-${item.size}`;
-          const currentVariantStock = variantStock[variantKey] !== undefined ? Number(variantStock[variantKey]) : 50;
-          
-          if (currentVariantStock < item.quantity) {
-            return res.status(400).json({ 
-              error: `Sorry, "${prod.name}" in Color: ${item.color}, Size: ${item.size} has only ${currentVariantStock} items left in stock. Please adjust your quantity.` 
-            });
-          }
-        }
-      }
-    }
+    pool = await getConnection();
+    tx = new sql.Transaction(pool);
+    await tx.begin();
 
     // Check if order ID already exists
-    const checkIdRes = await pool.request()
+    const checkIdRes = await new sql.Request(tx)
       .input("id", sql.VarChar(36), id)
       .query("SELECT id FROM Orders WHERE id = @id");
-    
+
     if (checkIdRes.recordset.length > 0) {
+      await tx.rollback();
       return res.status(409).json({ error: "Order ID already exists." });
     }
 
+    // Collapse the cart into total demand per product+variant. Two lines for
+    // the same variant have to be checked against their combined quantity,
+    // otherwise a single order can oversell itself.
+    const demand = new Map();
+    for (const item of items) {
+      if (!item.productId || item.productId === "custom") continue;
+      if (!demand.has(item.productId)) demand.set(item.productId, new Map());
+      const variants = demand.get(item.productId);
+      const key = `${item.color}-${item.size}`;
+      const existing = variants.get(key);
+      if (existing) existing.qty += item.quantity;
+      else variants.set(key, { color: item.color, size: item.size, qty: item.quantity });
+    }
+
+    // Verify and reserve. UPDLOCK/HOLDLOCK holds the row until commit, so a
+    // concurrent order for the same product waits here instead of racing.
+    const stockUpdates = [];
+    for (const [productId, variants] of demand) {
+      const prodRes = await new sql.Request(tx)
+        .input("prodId", sql.VarChar(36), productId)
+        .query("SELECT name, variantStock FROM Products WITH (UPDLOCK, HOLDLOCK) WHERE id = @prodId");
+
+      if (prodRes.recordset.length === 0) continue; // custom/unknown: not stock-tracked
+
+      const prod = prodRes.recordset[0];
+      let variantStock = {};
+      if (prod.variantStock) {
+        try {
+          variantStock = JSON.parse(prod.variantStock);
+        } catch {
+          variantStock = {};
+        }
+      }
+
+      for (const [variantKey, want] of variants) {
+        const available = variantStock[variantKey] !== undefined ? Number(variantStock[variantKey]) : 50;
+        if (available < want.qty) {
+          await tx.rollback();
+          return res.status(400).json({
+            error: `Sorry, "${prod.name}" in Color: ${want.color}, Size: ${want.size} has only ${available} items left in stock. Please adjust your quantity.`,
+          });
+        }
+        variantStock[variantKey] = Math.max(0, available - want.qty);
+      }
+
+      const totalStock = Object.values(variantStock).reduce((sum, v) => sum + Number(v || 0), 0);
+      stockUpdates.push({ productId, variantStock: JSON.stringify(variantStock), totalStock });
+    }
+
     // Insert order header
-    await pool.request()
+    await new sql.Request(tx)
       .input("id", sql.VarChar(36), id)
       .input("userId", sql.VarChar(36), userId)
       .input("subtotal", sql.Decimal(10, 2), subtotal)
@@ -133,7 +161,7 @@ router.post("/", async (req, res) => {
 
     // Insert order items
     for (const item of items) {
-      await pool.request()
+      await new sql.Request(tx)
         .input("orderId", sql.VarChar(36), id)
         .input("productId", sql.VarChar(36), item.productId)
         .input("name", sql.NVarChar(120), item.name)
@@ -149,64 +177,56 @@ router.post("/", async (req, res) => {
           INSERT INTO OrderItems (orderId, productId, name, price, image, color, size, quantity, description, layers, backImage)
           VALUES (@orderId, @productId, @name, @price, @image, @color, @size, @quantity, @description, @layers, @backImage)
         `);
-
-      // Decrease stock if it is a catalog product (not a custom design)
-      if (item.productId && item.productId !== "custom") {
-        const prodDataRes = await pool.request()
-          .input("prodId", sql.VarChar(36), item.productId)
-          .query("SELECT stock, variantStock FROM Products WHERE id = @prodId");
-        
-        if (prodDataRes.recordset.length > 0) {
-          const prod = prodDataRes.recordset[0];
-          let variantStock = {};
-          if (prod.variantStock) {
-            try {
-              variantStock = JSON.parse(prod.variantStock);
-            } catch {
-              variantStock = {};
-            }
-          }
-          
-          const variantKey = `${item.color}-${item.size}`;
-          const currentVariantQty = variantStock[variantKey] !== undefined ? Number(variantStock[variantKey]) : 50;
-          const newVariantQty = Math.max(0, currentVariantQty - item.quantity);
-          variantStock[variantKey] = newVariantQty;
-          
-          // Re-compute aggregate stock
-          let totalStock = 0;
-          for (const key in variantStock) {
-            totalStock += Number(variantStock[key] || 0);
-          }
-          
-          const variantStockStr = JSON.stringify(variantStock);
-          
-          await pool.request()
-            .input("prodId", sql.VarChar(36), item.productId)
-            .input("totalStock", sql.Int, totalStock)
-            .input("variantStock", sql.NVarChar(sql.MAX), variantStockStr)
-            .query(`
-              UPDATE Products 
-              SET stock = @totalStock, variantStock = @variantStock, updatedAt = GETDATE()
-              WHERE id = @prodId
-            `);
-        }
-      }
     }
 
-    // Send order confirmation email
-    await sendOrderConfirmationEmail(email, {
+    // Apply the stock levels computed against the locked rows above.
+    for (const upd of stockUpdates) {
+      await new sql.Request(tx)
+        .input("prodId", sql.VarChar(36), upd.productId)
+        .input("totalStock", sql.Int, upd.totalStock)
+        .input("variantStock", sql.NVarChar(sql.MAX), upd.variantStock)
+        .query(`
+          UPDATE Products
+          SET stock = @totalStock, variantStock = @variantStock, updatedAt = GETDATE()
+          WHERE id = @prodId
+        `);
+    }
+
+    await tx.commit();
+    tx = null;
+
+    // Sent only after the order is durably committed, and deliberately not
+    // awaited into the transaction — a mail failure must not roll back a
+    // paid order.
+    sendOrderConfirmationEmail(email, {
       id,
       name,
       subtotal,
       shipping,
       total,
       paymentMethod,
-      items
-    });
+      items,
+    }).catch((e) => console.error("Order confirmation email failed:", e.message));
 
     return res.status(201).json({ success: true, orderId: id });
   } catch (err) {
+    if (tx) {
+      try {
+        await tx.rollback();
+      } catch (rollbackErr) {
+        console.error("Rollback failed:", rollbackErr.message);
+      }
+    }
     console.error("Create Order Error:", err.message);
+
+    // Losing the race for a row lock is contention, not a bug — tell the
+    // customer to retry rather than showing a generic failure.
+    const msg = String(err.message || "");
+    if (/timeout|deadlock/i.test(msg)) {
+      return res.status(503).json({
+        error: "That item is in high demand right now. Please try placing your order again.",
+      });
+    }
     return res.status(500).json({ error: "Server error creating order." });
   }
 });

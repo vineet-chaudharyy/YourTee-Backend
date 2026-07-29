@@ -23,7 +23,7 @@ export async function authMiddleware(req, res, next) {
   try {
     const { payload } = await jwtVerify(token, getSecretKey());
     
-    // Verify user exists in SQL Server Users table to prevent FK constraint conflicts on stale tokens
+    // Verify the user still exists so a stale token can't resolve to a deleted account
     const pool = await getConnection();
     const result = await pool.request()
       .input("id", sql.VarChar(36), payload.sub)

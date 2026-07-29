@@ -26,9 +26,17 @@ app.use(helmet());
 app.use(compression());
 const port = process.env.PORT || 5001;
 
+// The deployed frontend proxies /api/* server-side, so the browser normally
+// stays same-origin and never preflights. The production origin is listed
+// anyway so a direct browser call from the live site isn't rejected.
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://localhost:3007", "http://localhost:3009"],
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:3007",
+      "http://localhost:3009",
+      "https://yourtee.thedigihook.com",
+    ],
     credentials: true,
   })
 );

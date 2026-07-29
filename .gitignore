@@ -3,3 +3,10 @@
 .env.local
 *.log
 npm-debug.log*
+
+# SQLite database + backups (contains real customer data)
+/data
+*.db
+*.db-wal
+*.db-shm
+*.bak
